@@ -64,7 +64,6 @@ int main() {
                 std::string line = serialBuffer.substr(0, pos);
                 serialBuffer.erase(0, pos + 1);
 
-                // parse CSV line safely
                 std::istringstream ss(line);
                 std::string token;
                 float accelX = 0, accelY = 0;
