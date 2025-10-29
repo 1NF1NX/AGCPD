@@ -2,6 +2,7 @@
 #include <iostream>
 #include <string>
 #include <sstream>
+#include <cmath>
 
 HANDLE openSerial(const char* portName, DWORD baudRate) {
     HANDLE hSerial = CreateFileA(portName,
@@ -44,6 +45,24 @@ void moveMouse(int dx, int dy) {
     SendInput(1, &input, sizeof(INPUT));
 }
 
+void leftClick() {
+    INPUT input[2] = {};
+    input[0].type = INPUT_MOUSE;
+    input[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+    input[1].type = INPUT_MOUSE;
+    input[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+    SendInput(2, input, sizeof(INPUT));
+}
+
+void rightClick() {
+    INPUT input[2] = {};
+    input[0].type = INPUT_MOUSE;
+    input[0].mi.dwFlags = MOUSEEVENTF_RIGHTDOWN;
+    input[1].type = INPUT_MOUSE;
+    input[1].mi.dwFlags = MOUSEEVENTF_RIGHTUP;
+    SendInput(2, input, sizeof(INPUT));
+}
+
 int main() {
     HANDLE hSerial = openSerial("COM4", CBR_115200);
     if (!hSerial) return 1;
@@ -53,6 +72,12 @@ int main() {
     std::string serialBuffer;
 
     std::cout << "Reading Arduino data..." << std::endl;
+
+    float avgZ = 0;
+    const int N = 200;
+    int count = 0;
+    bool zActive = false;
+    DWORD lastClickTime = 0;
 
     while (true) {
         if (ReadFile(hSerial, buffer, sizeof(buffer)-1, &bytesRead, nullptr) && bytesRead > 0) {
@@ -66,13 +91,32 @@ int main() {
 
                 std::istringstream ss(line);
                 std::string token;
-                float accelX = 0, accelY = 0;
+                float accelX = 0, accelY = 0, accelZ = 0;
 
                 if (std::getline(ss, token, ',')) accelX = std::stof(token);
                 if (std::getline(ss, token, ',')) accelY = std::stof(token);
+                if (std::getline(ss, token, ',')) accelZ = std::stof(token);
 
-                int dx = static_cast<int>(accelX * 5);
-                int dy = static_cast<int>(-accelY * 5);
+                avgZ = (avgZ * count + accelZ) / (count + 1);
+                count++;
+                if (count >= N) { count = 0; avgZ = accelZ; }
+
+                float diffZ = accelZ - avgZ;
+                int dx = static_cast<int>(accelX * 4);
+                int dy = static_cast<int>(-accelY * 4);
+
+                DWORD now = GetTickCount();
+                if (!zActive && diffZ >= 1.0f && (now - lastClickTime > 400)) {
+                    leftClick();
+                    lastClickTime = now;
+                    zActive = true;
+                } else if (!zActive && diffZ <= -1.0f && (now - lastClickTime > 400)) {
+                    rightClick();
+                    lastClickTime = now;
+                    zActive = true;
+                } else if (zActive && std::fabs(diffZ) < 0.2f) {
+                    zActive = false;
+                }
 
                 moveMouse(dx, dy);
             }
